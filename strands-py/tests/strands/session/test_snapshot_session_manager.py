@@ -296,6 +296,36 @@ def test_load_snapshot_restores_mid_run_state(storage):
 
 
 @pytest.mark.asyncio
+async def test_multi_agent_restore_without_snapshot_runs_once():
+    """A successful restore attempt with no snapshot is not repeated.
+
+    Guards https://github.com/strands-agents/harness-sdk/issues/4396:
+    restoration is complete after storage confirms that no checkpoint exists.
+    """
+
+    class CountingReadStorage(InMemoryStorage):
+        def __init__(self):
+            super().__init__()
+            self.read_calls = 0
+
+        async def read(self, key: str) -> bytes | None:
+            self.read_calls += 1
+            return await super().read(key)
+
+    storage = CountingReadStorage()
+    builder = GraphBuilder()
+    builder.add_node(Agent(model=_model("first", "second"), agent_id="n1"), "n1")
+    builder.set_entry_point("n1")
+    builder.set_graph_id("g1")
+    builder.set_session_manager(SnapshotSessionManager("mm", storage=storage))
+    graph = builder.build()
+
+    assert (await graph.invoke_async("first")).status == Status.COMPLETED
+    assert (await graph.invoke_async("second")).status == Status.COMPLETED
+    assert storage.read_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_multi_agent_restore_retries_after_storage_failure():
     """A failed restore leaves the checkpoint intact and resumes only pending nodes.
 

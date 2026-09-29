@@ -1446,6 +1446,26 @@ describe('SessionManager — multi-agent', () => {
     })
 
     // Guards https://github.com/strands-agents/harness-sdk/issues/4396:
+    // restoration is complete after storage confirms that no checkpoint exists.
+    it('does not repeat restore after a successful read with no snapshot', async () => {
+      const { MockMessageModel } = await import('../../__fixtures__/mock-message-model.js')
+      const loadSnapshotSpy = vi.spyOn(storage, 'loadSnapshot')
+      sessionManager = new SessionManager({ sessionId: 'empty-session', storage: { snapshot: storage } })
+      const model = new MockMessageModel().addTurn(new TextBlock('first')).addTurn(new TextBlock('second'))
+      const graph = new Graph({
+        id: 'test-graph',
+        nodes: [new Agent({ id: 'a', model, printer: false })],
+        edges: [],
+        maxSteps: 10,
+        sessionManager,
+      })
+
+      await expect(graph.invoke('first')).resolves.toMatchObject({ status: Status.COMPLETED })
+      await expect(graph.invoke('second')).resolves.toMatchObject({ status: Status.COMPLETED })
+      expect(loadSnapshotSpy).toHaveBeenCalledTimes(1)
+    })
+
+    // Guards https://github.com/strands-agents/harness-sdk/issues/4396:
     // a transient restore failure must not suppress restoration on the next invocation.
     it('retries restore after a snapshot read failure', async () => {
       const { MockMessageModel } = await import('../../__fixtures__/mock-message-model.js')
